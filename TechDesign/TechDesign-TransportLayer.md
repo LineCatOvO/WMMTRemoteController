@@ -44,8 +44,8 @@
 
 | 类型 | 方向 | 语义 |
 |---|---|---|
-| **StateUpdate** | Client → Server | 完整控制状态快照（状态通道） |
-| **EventUpdate** | Client → Server | 相对变化（事件通道） |
+| **State** | Client → Server | 完整控制状态快照（状态通道） |
+| **Event** | Client → Server | 相对变化（事件通道） |
 | **StateAck** | Server → Client | 状态通道确认（区间确认） |
 | **EventAck** | Server → Client | 事件通道确认（可选，默认可关闭） |
 | **Config** | Client → Server | 配置更新（控制平面） |
@@ -58,9 +58,9 @@
 ### 3.2 消息互斥不变量（必须）
 
 - **任何单条消息不得同时包含：**
-    - StateUpdate 与 Config
-    - EventUpdate 与 Config
-    - StateUpdate 与 EventUpdate
+    - State 与 Config
+    - Event 与 Config
+    - State 与 Event
 
 即：**控制平面（Config）与数据平面（State/Event）严格分离**。
 
@@ -74,8 +74,8 @@
 
 | 通道 | 发送内容 | 目标 |
 |---|---|---|
-| **状态通道 State Channel** | **完整状态快照**（StateUpdate） | 自洽、可恢复、强稳定 |
-| **事件通道 Event Channel** | **相对变化**（EventUpdate） | 低延迟、低带宽、快速响应 |
+| **状态通道 State Channel** | **完整状态快照**（State） | 自洽、可恢复、强稳定 |
+| **事件通道 Event Channel** | **相对变化**（Event） | 低延迟、低带宽、快速响应 |
 
 两通道可同时启用，或单独启用，但**至少启用一种**。
 
@@ -92,11 +92,11 @@
 
 ---
 
-## 5. 状态通道 StateUpdate 规范
+## 5. 状态通道 State 规范
 
-### 5.1 StateUpdate 语义
+### 5.1 State 语义
 
-StateUpdate 表示：
+State 表示：
 
 > **“在此时间点执行端应当执行的完整控制状态”**
 
@@ -104,7 +104,7 @@ StateUpdate 表示：
 
 ---
 
-### 5.2 StateUpdate 必备语义字段
+### 5.2 State 必备语义字段
 
 | 字段 | 语义 |
 |---|---|
@@ -116,25 +116,96 @@ StateUpdate 表示：
 
 ---
 
-### 5.3 覆盖原则（必须）
+### 5.3 State 信息类型详细定义
 
-- 新的 StateUpdate 必须能够**完全覆盖并替代**旧状态
-- 执行端以“最后接收的有效 StateUpdate”为权威基准
+#### 5.3.1 基础结构
+
+```json
+{
+  "stateId": 12345,
+  "clientSendTs": 1769340764376,
+  "keyboardState": [...],
+  "gamepadState": {
+    "buttons": [...],
+    "joysticks": {...},
+    "triggers": {...}
+  },
+  "flags": ["zero-output"]
+}
+```
+
+#### 5.3.2 keyboardState 字段定义
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| **keyboardState** | Array<KeyboardEvent> | 键盘所有按键事件的数组 |
+
+**KeyboardEvent 结构**：
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **keyId** | String | 键位标识符 | 如 "KEY_W", "KEY_A", "KEY_S", "KEY_D" 等 |
+| **eventType** | String | 事件类型 | "pressed", "released", "held" |
+
+#### 5.3.3 gamepadState 字段定义
+
+**gamepadState 结构**：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| **buttons** | Array<GamepadButtonEvent> | 手柄按键事件数组 |
+| **joysticks** | Object | 摇杆状态字典 |
+| **triggers** | Object | 扳机状态字典 |
+
+**GamepadButtonEvent 结构**：
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **buttonId** | String | 按键标识符 | 如 "BUTTON_A", "BUTTON_B", "BUTTON_X", "BUTTON_Y" 等 |
+| **eventType** | String | 事件类型 | "pressed", "released", "held" |
+
+**joysticks 结构**：
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **left** | Object | 左摇杆状态 | {"x": -1.0 到 1.0, "y": -1.0 到 1.0} |
+| **right** | Object | 右摇杆状态 | {"x": -1.0 到 1.0, "y": -1.0 到 1.0} |
+| **deadzone** | Number | 死区阈值 | 0.0 到 1.0 |
+
+**triggers 结构**：
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **left** | Number | 左扳机值 | 0.0 到 1.0 |
+| **right** | Number | 右扳机值 | 0.0 到 1.0 |
+
+#### 5.3.4 flags 字段定义
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **flags** | Array<String> | 标志数组 | "zero-output", "safe-mode", "debug-enabled" 等 |
 
 ---
 
-### 5.4 状态同步频率
+### 5.4 覆盖原则（必须）
+
+- 新的 State 必须能够**完全覆盖并替代**旧状态
+- 执行端以“最后接收的有效 State”为权威基准
+
+---
+
+### 5.5 状态同步频率
 
 - 状态通道支持按配置频率同步（频率由客户端设置）
 - 频率配置属于客户端本地发送策略，不要求服务端参与决策
 
 ---
 
-## 6. 事件通道 EventUpdate 规范
+## 6. 事件通道 Event 规范
 
-### 6.1 EventUpdate 语义
+### 6.1 Event 语义
 
-EventUpdate 表示：
+Event 表示：
 
 > **“相对于某个已知基准状态，发生了哪些控制变化”**
 
@@ -142,7 +213,7 @@ EventUpdate 表示：
 
 ---
 
-### 6.2 EventUpdate 必备语义字段
+### 6.2 Event 必备语义字段
 
 | 字段 | 语义 |
 |---|---|
@@ -154,21 +225,88 @@ EventUpdate 表示：
 
 ---
 
-### 6.3 事件消息约束（必须）
+### 6.3 Event 信息类型详细定义
 
-1. **非自洽：** EventUpdate 不构成完整状态
-2. **依附性：** EventUpdate 必须绑定 baseStateId
-3. **可丢弃：** EventUpdate 允许被丢弃且不要求重传
+#### 6.3.1 基础结构
+
+```json
+{
+  "eventId": 67890,
+  "baseStateId": 12345,
+  "clientSendTs": 1769340764376,
+  "delta": {
+    "keyboard": [...],
+    "gamepad": {
+      "buttons": [...],
+      "joysticks": {...},
+      "triggers": {...}
+    }
+  },
+  "flags": []
+}
+```
+
+#### 6.3.2 delta.keyboard 字段定义
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| **delta.keyboard** | Array<KeyboardEventDelta> | 键盘按键变化事件的数组 |
+
+**KeyboardEventDelta 结构**：
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **keyId** | String | 键位标识符 | 如 "KEY_W", "KEY_A", "KEY_S", "KEY_D" 等 |
+| **eventType** | String | 事件类型 | "pressed", "released" |
+
+#### 6.3.3 delta.gamepad 字段定义
+
+**delta.gamepad 结构**：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| **buttons** | Array<GamepadButtonEventDelta> | 手柄按键变化事件数组 |
+| **joysticks** | Object | 摇杆变化状态字典 |
+| **triggers** | Object | 扳机变化状态字典 |
+
+**GamepadButtonEventDelta 结构**：
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **buttonId** | String | 按键标识符 | 如 "BUTTON_A", "BUTTON_B", "BUTTON_X", "BUTTON_Y" 等 |
+| **eventType** | String | 事件类型 | "pressed", "released" |
+
+**joysticks 变化结构**：
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **left** | Object | 左摇杆变化状态 | {"x": -1.0 到 1.0, "y": -1.0 到 1.0} |
+| **right** | Object | 右摇杆变化状态 | {"x": -1.0 到 1.0, "y": -1.0 到 1.0} |
+
+**triggers 变化结构**：
+
+| 字段 | 类型 | 语义 | 取值范围 |
+|---|---|---|---|
+| **left** | Number | 左扳机变化值 | 0.0 到 1.0 |
+| **right** | Number | 右扳机变化值 | 0.0 到 1.0 |
+
+---
+
+### 6.4 事件消息约束（必须）
+
+1. **非自洽：** Event 不构成完整状态
+2. **依附性：** Event 必须绑定 baseStateId
+3. **可丢弃：** Event 允许被丢弃且不要求重传
 4. **不可补偿：** 执行端不得“补事件/重放事件”
 
 ---
 
-### 6.4 事件应用规则（必须）
+### 6.5 事件应用规则（必须）
 
-执行端处理 EventUpdate 时：
+执行端处理 Event 时：
 
 - 若 `baseStateId` 与执行端当前权威状态不匹配（或不再可用），则
-    - **直接丢弃该 EventUpdate**
+    - **直接丢弃该 Event**
     - 并通过 Status 或 Error 暴露“事件被丢弃”的原因（用于观测）
 
 这保证：事件丢失不会导致执行端进入不一致状态。
@@ -188,7 +326,7 @@ EventUpdate 表示：
 
 ### 7.2 零输出的传输方式
 
-- **首选：通过 StateUpdate 表达零输出**（flags 标记 zero-output）
+- **首选：通过 State 表达零输出**（flags 标记 zero-output）
 - 事件通道可携带 “请求清零” 的事件，但执行端最终必须落到“权威状态为零”。
 
 ---
@@ -197,7 +335,7 @@ EventUpdate 表示：
 
 | 场景 | 责任方 | 要求 |
 |---|---|---|
-| 客户端禁用输出 | Client | 立即发送零输出（StateUpdate） |
+| 客户端禁用输出 | Client | 立即发送零输出（State） |
 | 布局切换开始 | Client | 先清零再切换 |
 | 安全切断 | Client/Server | 立即零输出并可观测 |
 | 连接断开/客户端崩溃 | Server | 超时触发清零（见 §10） |
@@ -254,7 +392,7 @@ droppedCount = ackStateId - lastAckStateId - 1
 
 客户端应统计并展示**丢包率（Dropped State Rate）**，至少支持：
 
-- **窗口统计：**最近 \(N\) 次 StateUpdate 的丢包比例，或最近 T 秒的丢包比例
+- **窗口统计：**最近 N 次 State 的丢包比例，或最近 T 秒的丢包比例
 - **展示语义：**作为稳定性指标呈现给用户（不触发自动行为）
 
 ---
@@ -305,7 +443,7 @@ rtt = clientAckRecvTs - clientSendTs
 
 执行端必须维护接收超时：
 
-- 若超过 `timeoutMs` 未收到新的 **StateUpdate**（或满足等价“可维持活性”的条件），则
+- 若超过 `timeoutMs` 未收到新的 **State**（或满足等价“可维持活性”的条件），则
     - 执行端必须进入 **零输出**
     - 并通过 Status 明确报告“已清零 + 原因=timeout”
 
@@ -349,8 +487,8 @@ Config 用于更新执行端控制平面参数（例如 timeoutMs、ackEnabled �
 
 ### 11.4 Config 与 ControlState 的分离（重申）
 
-- Config 与 StateUpdate/EventUpdate **不得同包**
-- Config 的生效不需要与某条 StateUpdate 绑定；**完成时刻不做硬限制**
+- Config 与 State/Event **不得同包**
+- Config 的生效不需要与某条 State 绑定；**完成时刻不做硬限制**
 
 ---
 
@@ -416,8 +554,8 @@ Status 用于执行端提供状态快照，用于诊断与 UI 展示，至少包
 ## 14. 通信层不变量总结（必须遵守）
 
 1. **控制平面与数据平面分离不变量**：Config 不与 State/Event 同包
-2. **状态覆盖不变量**：StateUpdate 完全覆盖旧状态
-3. **事件相对不变量**：EventUpdate 只描述变化、可丢弃、不可补偿
+2. **状态覆盖不变量**：State 完全覆盖旧状态
+3. **事件相对不变量**：Event 只描述变化、可丢弃、不可补偿
 4. **累计确认不变量**：StateAck 为区间确认（含覆盖/执行语义）
 5. **丢包可观测不变量**：ACK 跳跃必须记录为丢包事件并形成丢包率
 6. **RTT 延迟不变量**：延迟基于 RTT，不使用跨进程时间差
